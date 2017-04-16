@@ -6,11 +6,17 @@ use App\Category;
 use App\Post;
 use App\Http\Requests;
 use App\Http\Controllers\Controller;
+use App\Tag;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
 
 class PostController extends Controller
 {
+    public function __construct()
+    {
+        $this->middleware('auth');
+    }
+
     /**
      * Display a listing of the resource.
      *
@@ -32,7 +38,8 @@ class PostController extends Controller
     public function create()
     {
         $categories=Category::all();
-        return view('posts.create')->withCategories($categories);
+        $tags=Tag::all();
+        return view('posts.create')->withCategories($categories)->withTags($tags);
     }
 
     /**
@@ -60,6 +67,8 @@ class PostController extends Controller
         $post->body=$request->body;
 
         $post->save();
+
+        $post->tags()->sync($request->tags,false);
 
         Session::flash('success','The blog post was successfully save!');
         return redirect()->route('posts.show',$post->id);
@@ -93,8 +102,14 @@ class PostController extends Controller
         foreach ($categories as $category) {
             $cats[$category->id]=$category->name;
         }
+
+        $tags=Tag::all();
+        $tags2=array();
+        foreach ($tags as $tag) {
+            $tags2[$tag->id]=$tag->name;
+        }
         //return the view and pass in the var we previously created
-        return view('posts.edit')->withPost($post)->withCategories($cats);
+        return view('posts.edit')->withPost($post)->withCategories($cats)->withTags($tags2);
     }
 
     /**
@@ -138,6 +153,12 @@ class PostController extends Controller
 
         $post->save();
 
+        if (isset($request->tags))
+        {
+            $post->tags()->sync($request->tags);
+        }else{
+            $post->tags()->sync(array());
+        }
         //set flash data with succes message
         Session::flash('success','This post was succesfully saved.');
 
@@ -155,6 +176,7 @@ class PostController extends Controller
     {
 
         $post=Post::find($id);
+        $post->tags()->detach();
 
         $post->delete();
 
