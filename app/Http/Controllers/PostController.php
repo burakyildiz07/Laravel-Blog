@@ -7,8 +7,12 @@ use App\Post;
 use App\Http\Requests;
 use App\Http\Controllers\Controller;
 use App\Tag;
+
+use Mews\Purifier\Facades\Purifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\Storage;
+use Intervention\Image\Facades\Image;
 
 class PostController extends Controller
 {
@@ -55,7 +59,8 @@ class PostController extends Controller
             'title'=>'required|max:255',
             'slug'=>'required|alpha_dash|min:5|max:255|unique:posts,slug',
             'category_id'=>'required|integer',
-            'body' =>'required'
+            'body' =>'required',
+            'featured_image'=>'sometimes|image'
         ));
 
         //store in the database
@@ -64,11 +69,25 @@ class PostController extends Controller
         $post->title=$request->title;
         $post->slug=$request->slug;
         $post->category_id=$request->category_id;
-        $post->body=$request->body;
+        $post->body=Purifier::clean($request->body);
+
+        //save our image
+        if ($request->hasFile('featured_image')){
+            $image=$request->file('featured_image');
+            $filename=time().'.'.$image->getClientOriginalExtension();
+            $location=public_path('images/'.$filename);
+            Image::make($image)->resize(800,400)->save($location);
+
+            $post->image=$filename;
+        }
 
         $post->save();
-
-        $post->tags()->sync($request->tags,false);
+        if (isset($request->tags))
+        {
+            $post->tags()->sync($request->tags,false);
+        }else{
+            $post->tags()->sync(array());
+        }
 
         Session::flash('success','The blog post was successfully save!');
         return redirect()->route('posts.show',$post->id);
@@ -123,24 +142,16 @@ class PostController extends Controller
     {
 
         $post=Post::find($id);
-        if ($request->input('slug')==$post->slug)
-        {
+
             //validate the data
             $this->validate($request,array(
                 'title'=>'required|min:6',
+                'slug'=>"required|alpha_dash|min:5|max:255|unique:posts,slug,$id",
                 'category_id'=>'required|integer',
-                'body'=>'required'
+                'body'=>'required',
+                'features_image'=>'image'
             ));
-        }
-        else{
-            //validate the data
-            $this->validate($request,array(
-                'title'=>'required|min:6',
-                'slug'=>'required|alpha_dash|min:5|max:255|unique:posts,slug',
-                'category_id'=>'required|integer',
-                'body'=>'required'
-            ));
-        }
+
 
 
         //Save the data to the database
@@ -149,7 +160,24 @@ class PostController extends Controller
         $post->title=$request->input('title');
         $post->slug=$request->slug;
         $post->category_id=$request->category_id;
-        $post->body=$request->input('body');
+        $post->body=Purifier::clean($request->input('body'));
+
+        if ($request->hasFile('featured_image')){
+
+            $image=$request->file('featured_image');
+            $filename=time().'.'.$image->getClientOriginalExtension();
+            $location=public_path('images/'.$filename);
+            Image::make($image)->resize(800,400)->save($location);
+            $oldFilename=$post->image;
+
+            $post->image=$filename;
+
+            Storage::disk('public')->delete($oldFilename);
+
+
+
+        }
+
 
         $post->save();
 
@@ -177,6 +205,7 @@ class PostController extends Controller
 
         $post=Post::find($id);
         $post->tags()->detach();
+        Storage::disk('public')->delete($post->image);
 
         $post->delete();
 
